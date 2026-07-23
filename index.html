@@ -16,7 +16,7 @@
         .page { display: none; padding: 15px; }
         .page.active { display: block; }
         .card { background: rgba(255,255,255,0.85); backdrop-filter: blur(5px); padding: 18px; border-radius: 14px; margin-bottom: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); transition: 0.2s; border: 2px solid transparent; }
-        .card.selected { border: 2px solid var(--danger); background: rgba(255, 59, 48, 0.1); }
+        .card.selected { border: 2px solid var(--primary); background: rgba(0, 122, 255, 0.1); }
         .flex-between { display: flex; justify-content: space-between; align-items: center; }
         .btn-primary { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; border-radius: 12px; font-weight: bold; font-size: 16px; margin-top: 10px; }
         .btn-ghost { background: none; color: var(--primary); border: none; font-size: 16px; font-weight: bold; }
@@ -26,7 +26,7 @@
         input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; box-sizing: border-box; background: white; font-size: 16px; }
         input[readonly] { background: #e9e9ee; color: #555; }
         #bg-input { display: none; }
-        .batch-bar { display: none; background: var(--danger); color: white; padding: 15px; text-align: center; position: fixed; top: 0; width: 100%; z-index: 100; font-weight: bold; }
+        .batch-bar { display: none; background: var(--primary); color: white; padding: 12px 15px; text-align: center; position: fixed; top: 0; width: 100%; z-index: 100; font-size: 14px; box-sizing: border-box; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
         .export-btn { background: white; color: #333; border: 1px solid #ddd; padding: 10px; border-radius: 8px; margin-top: 10px; width: 100%; font-size: 14px; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .time-group { display: flex; gap: 10px; }
         .time-group div { flex: 1; }
@@ -34,10 +34,18 @@
 </head>
 <body>
 
+    <!-- 頂部即時計算/刪除列 -->
     <div id="batch-delete-bar" class="batch-bar">
-        已選取 <span id="sel-count">0</span> 項
-        <button onclick="cancelSelection()" style="color:white; background:none; border:1px solid white; border-radius:5px; margin-left:10px; padding:4px 8px;">取消</button>
-        <button onclick="confirmBatchDelete()" style="color:white; background:none; border:1px solid white; border-radius:5px; margin-left:10px; padding:4px 8px;">確認刪除</button>
+        <div class="flex-between">
+            <div style="text-align: left;">
+                <div style="font-size:12px; opacity:0.9;">已選取 <span id="sel-count">0</span> 天</div>
+                <strong id="calc-summary" style="font-size:15px;">總計: 0hr | HK$0</strong>
+            </div>
+            <div>
+                <button onclick="cancelSelection()" style="color:white; background:rgba(255,255,255,0.2); border:1px solid white; border-radius:6px; padding:6px 10px; font-size:12px; margin-right:5px;">取消</button>
+                <button id="btn-delete-action" onclick="confirmBatchDelete()" style="color:white; background:var(--danger); border:none; border-radius:6px; padding:6px 10px; font-size:12px; font-weight:bold;">刪除</button>
+            </div>
+        </div>
     </div>
 
     <div id="page-home" class="page active">
@@ -52,6 +60,7 @@
         <div id="job-list" style="margin-top:10px;"></div>
     </div>
 
+    <!-- 編輯/新增頁面 -->
     <div id="page-edit" class="page">
         <div class="header"><button class="btn-ghost" onclick="showPage('home')">✕ 關閉</button><h1 id="edit-title">紀錄</h1><div style="width:50px;"></div></div>
         <div class="card">
@@ -78,6 +87,7 @@
         </div>
     </div>
 
+    <!-- 統計頁面 -->
     <div id="page-stats" class="page">
         <div class="header"><h1>薪資統計</h1><div></div></div>
         <div class="card">
@@ -87,6 +97,7 @@
         <div id="stats-summary-list"></div>
     </div>
 
+    <!-- 明細頁面 -->
     <div id="page-stats-detail" class="page">
         <div class="header"><button class="btn-ghost" onclick="showPage('stats')">← 返回</button><h1 id="stats-detail-title">明細</h1><div style="width:50px;"></div></div>
         <div id="stats-detail-list"></div>
@@ -102,7 +113,6 @@
     let logs = JSON.parse(localStorage.getItem('my_logs_v6') || '[]');
     let selectedItems = new Set();
     let currentMode = "job"; 
-    let pressTimer;
     let currentJob = "";
     let currentMonth = "";
     let editingIndex = -1;
@@ -117,7 +127,6 @@
         if(pageId === 'stats') renderMonthlyStats();
     }
 
-    // 自動計算時間差（唯讀模式）
     function autoCalculateHours() {
         const startVal = document.getElementById('time-start').value;
         const endVal = document.getElementById('time-end').value;
@@ -125,45 +134,30 @@
         if (startVal && endVal) {
             const start = new Date(`1970-01-01T${startVal}:00`);
             let end = new Date(`1970-01-01T${endVal}:00`);
-            
-            // 如果結束時間早於或等於開始時間，算作跨夜（第二天）
-            if (end <= start) {
-                end.setDate(end.getDate() + 1);
-            }
-            
-            const diffMs = end - start;
-            const diffHrs = diffMs / (1000 * 60 * 60);
-            
+            if (end <= start) end.setDate(end.getDate() + 1);
+            const diffHrs = (end - start) / (1000 * 60 * 60);
             document.getElementById('work-hours').value = diffHrs.toFixed(2);
         } else {
             document.getElementById('work-hours').value = "";
         }
     }
 
-    // 主頁工作列表
     function renderJobs() {
         currentMode = "job";
         const list = document.getElementById('job-list');
         list.innerHTML = jobs.map((j, i) => `
-            <div class="card flex-between ${selectedItems.has(i)?'selected':''}" 
-                 ontouchstart="startPress(${i})" ontouchend="endPress()" 
-                 onclick="handleItemClick('${j}', ${i})">
+            <div class="card flex-between ${selectedItems.has(i)?'selected':''}" onclick="handleItemClick('${j}', ${i})">
                 <strong>${j}</strong>
                 <span>${selectedItems.size > 0 ? (selectedItems.has(i)?'✅':'⬜') : '❯'}</span>
             </div>
         `).join('') || '<p style="text-align:center;color:#666;">按 + 新增工作</p>';
     }
 
-    // 長按邏輯
-    function startPress(i) { pressTimer = setTimeout(() => toggleSelect(i), 600); }
-    function endPress() { clearTimeout(pressTimer); }
-    
     function handleItemClick(name, i) {
-        if(selectedItems.size > 0) {
+        if(selectedItems.size > 0 || currentMode === "log") {
             toggleSelect(i);
         } else {
-            if(currentMode === "job") clickJob(name);
-            else editLog(i);
+            clickJob(name);
         }
     }
 
@@ -171,17 +165,41 @@
         if(selectedItems.has(i)) selectedItems.delete(i);
         else selectedItems.add(i);
         
-        const bar = document.getElementById('batch-delete-bar');
-        bar.style.display = selectedItems.size > 0 ? 'block' : 'none';
-        document.getElementById('sel-count').innerText = selectedItems.size;
+        updateBatchBar();
         
         if(currentMode === "job") renderJobs();
         else renderDetailList();
     }
 
+    function updateBatchBar() {
+        const bar = document.getElementById('batch-delete-bar');
+        if(selectedItems.size > 0) {
+            bar.style.display = 'block';
+            document.getElementById('sel-count').innerText = selectedItems.size;
+            
+            if(currentMode === "log") {
+                let totalHrs = 0;
+                let totalPay = 0;
+                selectedItems.forEach(idx => {
+                    if(logs[idx]) {
+                        totalHrs += logs[idx].hrs;
+                        totalPay += logs[idx].pay;
+                    }
+                });
+                document.getElementById('calc-summary').innerText = `總計: ${totalHrs.toFixed(1)}hr | HK$${totalPay.toFixed(1)}`;
+                document.getElementById('btn-delete-action').style.display = 'inline-block';
+            } else {
+                document.getElementById('calc-summary').innerText = `已選取 ${selectedItems.size} 個工作`;
+                document.getElementById('btn-delete-action').style.display = 'inline-block';
+            }
+        } else {
+            bar.style.display = 'none';
+        }
+    }
+
     function cancelSelection() {
         selectedItems.clear();
-        document.getElementById('batch-delete-bar').style.display = 'none';
+        updateBatchBar();
         if(currentMode === "job") renderJobs();
         else renderDetailList();
     }
@@ -262,6 +280,7 @@
         currentJob = j; currentMonth = m; 
         currentMode = "log";
         document.getElementById('stats-detail-title').innerText = j; 
+        cancelSelection();
         renderDetailList(); 
         showPage('stats-detail'); 
     }
@@ -269,12 +288,15 @@
     function renderDetailList() {
         const filtered = logs.map((l, i) => ({...l, idx: i})).filter(l => l.date.startsWith(currentMonth) && l.job === currentJob).sort((a,b) => a.date.localeCompare(b.date));
         document.getElementById('stats-detail-list').innerHTML = filtered.map(l => `
-            <div class="card flex-between ${selectedItems.has(l.idx)?'selected':''}" ontouchstart="startPress(${l.idx})" ontouchend="endPress()" onclick="handleItemClick('', ${l.idx})">
+            <div class="card flex-between ${selectedItems.has(l.idx)?'selected':''}" onclick="handleItemClick('', ${l.idx})">
                 <div>
                     <strong>${l.date}</strong> ${l.tStart && l.tEnd ? `<small style="color:#666;">(${l.tStart}-${l.tEnd})</small>` : ''}<br>
                     <small>${l.hrs}hr x HK$${l.rate}</small>
                 </div>
-                <strong>HK$${l.pay.toFixed(1)} ${selectedItems.has(l.idx)?'✅':'✎'}</strong>
+                <div style="text-align:right;">
+                    <strong>HK$${l.pay.toFixed(1)}</strong>
+                    <span style="margin-left:8px;">${selectedItems.has(l.idx)?'✅':'⬜'}</span>
+                </div>
             </div>
         `).join('');
     }
@@ -335,4 +357,3 @@
 </script>
 </body>
 </html>
-
